@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 ﻿import { NextRequest, NextResponse } from 'next/server'
 
 const PISTON_URL = 'https://emkc.org/api/v2/piston/execute'
