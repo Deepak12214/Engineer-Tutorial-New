@@ -30,6 +30,7 @@ export default function AdminSEOPage() {
   })
   const [sitemap, setSitemap] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
 
   async function regenerateSitemap() {
@@ -39,9 +40,17 @@ export default function AdminSEOPage() {
   }
 
   async function save() {
-    await new Promise(r => setTimeout(r, 400))
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+    setSaving(true)
+    try {
+      await fetch('/api/admin/site-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'global_seo', value: globalSEO }),
+      })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch {}
+    setSaving(false)
   }
 
   const scores = { good: contentSeoItems.filter(i => i.score === 'good').length, warning: contentSeoItems.filter(i => i.score === 'warning').length, bad: contentSeoItems.filter(i => i.score === 'bad').length }
@@ -102,8 +111,8 @@ export default function AdminSEOPage() {
           </div>
           <div className="flex items-center gap-3 mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
             {saved && <span className="text-sm text-green-600 font-medium">✓ Saved!</span>}
-            <button onClick={save} className="flex items-center gap-2 px-4 py-2 bg-accent text-white rounded-xl text-sm font-semibold hover:bg-blue-700">
-              <Save className="w-4 h-4" /> Save Global SEO
+            <button onClick={save} disabled={saving} className="flex items-center gap-2 px-4 py-2 bg-accent text-white rounded-xl text-sm font-semibold hover:bg-blue-700 disabled:opacity-50">
+              <Save className="w-4 h-4" /> {saving ? 'Saving...' : 'Save Global SEO'}
             </button>
             <button onClick={regenerateSitemap} disabled={sitemap}
               className="flex items-center gap-2 px-4 py-2 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 rounded-xl text-sm font-medium hover:border-accent hover:text-accent disabled:opacity-50">

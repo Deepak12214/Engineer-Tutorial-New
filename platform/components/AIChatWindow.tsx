@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Bot, X, Send, Minimize2, Maximize2, Sparkles } from 'lucide-react'
+import { Bot, X, Send, Minimize2, Maximize2, Sparkles, Trash2 } from 'lucide-react'
 
 interface Message { role: 'user' | 'assistant'; content: string }
 
@@ -12,50 +12,92 @@ const suggestedPrompts = [
   'What are the trade-offs?',
 ]
 
-export default function AIChatWindow({ contextTopic }: { contextTopic?: string }) {
+export default function AIChatWindow({ contextTopic, prefillCode }: { contextTopic?: string; prefillCode?: string }) {
   const [open, setOpen] = useState(false)
   const [minimized, setMinimized] = useState(false)
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState<Message[]>([
     { role: 'assistant', content: `Hi! I'm your AI learning assistant${contextTopic ? ` for **${contextTopic}**` : ''}. Ask me anything about this topic — I can explain concepts, give examples, or help you prepare for interviews!` },
   ])
-  const [loading, setLoading] = useState(false)
+  const [streaming, setStreaming] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  const mockResponses: Record<string, string> = {
-    default: "Great question! In system design, this concept is crucial for building scalable systems. The key insight is that you need to balance consistency, availability, and partition tolerance — you can only guarantee two of the three (CAP theorem). For most real-world applications, we prioritize availability and partition tolerance while accepting eventual consistency.",
-    explain: "Let me break this down simply:\n\n**The core idea:** Think of it like a restaurant kitchen. When orders come in faster than the kitchen can process them, you need a queue. That's essentially what message brokers like Kafka do for your services.\n\n**Why it matters:** Without this, your services would be tightly coupled — if one goes down, everything fails. With a message queue, each service operates independently.",
-    interview: "Here are the top interview questions on this topic:\n\n1. **What's the difference between horizontal and vertical scaling?**\n2. **How would you design a system to handle 1 million concurrent users?**\n3. **Explain the trade-offs between SQL and NoSQL**\n4. **What is a race condition and how do you prevent it?**\n\nFor each, always explain the WHY before the HOW — interviewers care about your reasoning.",
-  }
-
-  function getResponse(msg: string): string {
-    const lower = msg.toLowerCase()
-    if (lower.includes('explain') || lower.includes('simple')) return mockResponses.explain
-    if (lower.includes('interview') || lower.includes('question')) return mockResponses.interview
-    return mockResponses.default
-  }
+  // If prefillCode is set, open and pre-fill the input
+  useEffect(() => {
+    if (prefillCode) {
+      setOpen(true)
+      setInput(`Explain this code:\n\`\`\`\n${prefillCode}\n\`\`\``)
+    }
+  }, [prefillCode])
 
   async function send(text: string) {
-    if (!text.trim()) return
+    if (!text.trim() || streaming) return
     const userMsg: Message = { role: 'user', content: text }
-    setMessages(prev => [...prev, userMsg])
+    const updatedMessages = [...messages, userMsg]
+    setMessages(updatedMessages)
     setInput('')
-    setLoading(true)
+    setStreaming(true)
 
-    await new Promise(r => setTimeout(r, 900 + Math.random() * 600))
-    const aiMsg: Message = { role: 'assistant', content: getResponse(text) }
-    setMessages(prev => [...prev, aiMsg])
-    setLoading(false)
+    // Add empty assistant message to stream into
+    setMessages(prev => [...prev, { role: 'assistant', content: '' }])
+
+    try {
+      abortRef.current = new AbortController()
+      const res = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: updatedMessages.map(m => ({ role: m.role, content: m.content })),
+          topicContext: contextTopic,
+        }),
+        signal: abortRef.current.signal,
+      })
+
+      if (!res.ok || !res.body) throw new Error('AI unavailable')
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let full = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        const chunk = decoder.decode(value, { stream: true })
+        full += chunk
+        setMessages(prev => {
+          const updated = [...prev]
+          updated[updated.length - 1] = { role: 'assistant', content: full }
+          return updated
+        })
+      }
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        setMessages(prev => {
+          const updated = [...prev]
+          updated[updated.length - 1] = { role: 'assistant', content: 'Sorry, AI is unavailable right now. Please check your GROQ_API_KEY in .env.local.' }
+          return updated
+        })
+      }
+    } finally {
+      setStreaming(false)
+    }
+  }
+
+  function clearChat() {
+    if (abortRef.current) abortRef.current.abort()
+    setMessages([{ role: 'assistant', content: `Hi! Ask me anything about ${contextTopic ?? 'this topic'}.` }])
+    setStreaming(false)
   }
 
   if (!open) {
     return (
       <button onClick={() => setOpen(true)}
-        className="fixed bottom-6 right-6 z-50 w-14 h-14 bg-accent rounded-full shadow-2xl flex items-center justify-center hover:bg-blue-700 transition-all hover:scale-110 group"
+        className="fixed bottom-6 right-6 z-50 w-14 h-14 bg-accent rounded-full shadow-2xl flex items-center justify-center hover:bg-blue-700 transition-all hover:scale-110"
         title="Ask AI Assistant"
       >
         <Bot className="w-6 h-6 text-white" />
@@ -74,11 +116,14 @@ export default function AIChatWindow({ contextTopic }: { contextTopic?: string }
           <Bot className="w-5 h-5 text-white" />
           <div>
             <p className="text-sm font-semibold text-white">AI Assistant</p>
-            {!minimized && contextTopic && <p className="text-[10px] text-blue-200 truncate max-w-[180px]">{contextTopic}</p>}
+            {!minimized && contextTopic && <p className="text-[10px] text-blue-200 truncate max-w-[160px]">{contextTopic}</p>}
           </div>
-          <span className="w-2 h-2 bg-green-400 rounded-full ml-1" />
+          <span className="w-2 h-2 bg-green-400 rounded-full ml-1 animate-pulse" />
         </div>
         <div className="flex items-center gap-1">
+          <button onClick={clearChat} title="Clear chat" className="p-1.5 text-blue-200 hover:text-white rounded-md">
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
           <button onClick={() => setMinimized(!minimized)} className="p-1.5 text-blue-200 hover:text-white rounded-md">
             {minimized ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
           </button>
@@ -99,39 +144,26 @@ export default function AIChatWindow({ contextTopic }: { contextTopic?: string }
                     <Sparkles className="w-3.5 h-3.5 text-accent" />
                   </div>
                 )}
-                <div className={`max-w-[85%] px-3 py-2 rounded-xl text-sm leading-relaxed
+                <div className={`max-w-[85%] px-3 py-2 rounded-xl text-sm leading-relaxed whitespace-pre-wrap
                   ${m.role === 'user'
                     ? 'bg-accent text-white rounded-br-sm'
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-bl-sm'
                   }`}
                 >
-                  {m.content.split('\n').map((line, j) => (
-                    <span key={j}>
-                      {line.replace(/\*\*(.*?)\*\*/g, '$1')}
-                      {j < m.content.split('\n').length - 1 && <br />}
-                    </span>
-                  ))}
+                  {m.content || (i === messages.length - 1 && streaming ? (
+                    <div className="flex gap-1 py-1">
+                      <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                      <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                      <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                    </div>
+                  ) : '…')}
                 </div>
               </div>
             ))}
-            {loading && (
-              <div className="flex justify-start">
-                <div className="w-7 h-7 rounded-full bg-accent/10 flex items-center justify-center flex-shrink-0 mr-2">
-                  <Sparkles className="w-3.5 h-3.5 text-accent" />
-                </div>
-                <div className="bg-slate-100 dark:bg-slate-800 px-4 py-3 rounded-xl rounded-bl-sm">
-                  <div className="flex gap-1">
-                    <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                  </div>
-                </div>
-              </div>
-            )}
             <div ref={bottomRef} />
           </div>
 
-          {/* Suggested prompts (only when few messages) */}
+          {/* Suggested prompts */}
           {messages.length <= 1 && (
             <div className="px-4 pb-2 flex flex-wrap gap-1.5">
               {suggestedPrompts.map(p => (
@@ -154,7 +186,7 @@ export default function AIChatWindow({ contextTopic }: { contextTopic?: string }
               rows={1}
               className="flex-1 resize-none text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-accent placeholder-slate-400 max-h-24"
             />
-            <button onClick={() => send(input)} disabled={!input.trim() || loading}
+            <button onClick={() => send(input)} disabled={!input.trim() || streaming}
               className="p-2.5 bg-accent text-white rounded-xl hover:bg-blue-700 disabled:opacity-40 flex-shrink-0 self-end">
               <Send className="w-4 h-4" />
             </button>

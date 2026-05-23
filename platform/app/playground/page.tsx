@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Header from '@/components/Header'
-import { Play, RotateCcw, Copy, ChevronDown } from 'lucide-react'
+import { Play, RotateCcw, Copy, ChevronDown, Terminal } from 'lucide-react'
 
 const languages = ['JavaScript', 'Python', 'Java', 'C++', 'Go', 'Rust', 'SQL', 'Bash']
 
@@ -139,16 +139,6 @@ echo "Length: \${#greeting}"
 echo "Uppercase: \${greeting^^}"`,
 }
 
-const mockOutput: Record<string, string> = {
-  JavaScript: `> Running JavaScript...\n\n[ 0, 1 ]\n[ 1, 2 ]\n\n✓ Executed in 0.032s | Memory: 8.2 MB`,
-  Python: `> Running Python 3.11...\n\n[0, 1]\n[1, 2]\n\n✓ Executed in 0.041s | Memory: 6.8 MB`,
-  Java: `> Compiling Java...\n> Running...\n\n[0, 1]\n\n✓ Executed in 0.284s | Memory: 41.3 MB`,
-  'C++': `> Compiling C++...\n> Running...\n\n0 1\n\n✓ Executed in 0.012s | Memory: 4.1 MB`,
-  Go: `> Running Go...\n\n[0 1]\n\n✓ Executed in 0.089s | Memory: 3.4 MB`,
-  SQL: `> Running SQL...\n\nid | name    | email\n---|---------|------------------\n1  | Alice   | alice@example.com\n2  | Bob     | bob@example.com\n3  | Charlie | charlie@example.com\n\n(3 rows)\n\n✓ Executed in 0.008s`,
-  Rust: `> Compiling Rust...\n> Running...\n\n[0, 1]\n\n✓ Executed in 0.021s | Memory: 1.8 MB`,
-  Bash: `> Running Bash...\n\nHello from EngineerTutorial Playground!\nFruit: apple\nFruit: banana\nFruit: cherry\nLength: 13\nUppercase: HELLO, WORLD!\n\n✓ Executed in 0.015s`,
-}
 
 export default function PlaygroundPage() {
   const [lang, setLang] = useState('Python')
@@ -156,13 +146,51 @@ export default function PlaygroundPage() {
   const [output, setOutput] = useState('')
   const [running, setRunning] = useState(false)
   const [langOpen, setLangOpen] = useState(false)
+  const [stdin, setStdin] = useState('')
+  const [showStdin, setShowStdin] = useState(false)
 
   async function runCode() {
     setRunning(true)
     setOutput('> Executing...')
-    await new Promise(r => setTimeout(r, 800))
-    setOutput(mockOutput[lang] || '> No output')
-    setRunning(false)
+    try {
+      const res = await fetch('/api/code/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ language: lang, code, stdin }),
+      })
+      const data = await res.json()
+
+      if (!res.ok) {
+        setOutput(`Error: ${data.error}`)
+        return
+      }
+
+      const run = data.run ?? {}
+      const compile = data.compile ?? {}
+      const lines: string[] = []
+
+      if (compile.stderr) lines.push(`Compile Error:\n${compile.stderr}`)
+      if (compile.output && !compile.stderr) lines.push(`Compiled OK`)
+
+      const stdout = run.stdout?.trimEnd()
+      const stderr = run.stderr?.trimEnd()
+
+      if (stdout) lines.push(stdout)
+      if (stderr) lines.push(`\nStderr:\n${stderr}`)
+      if (!stdout && !stderr) lines.push('(no output)')
+
+      const time = run.cpu_time != null ? `${(run.cpu_time * 1000).toFixed(1)}ms` : ''
+      const mem = run.memory != null ? `${(run.memory / 1024).toFixed(1)} MB` : ''
+      const exitCode = run.code ?? 0
+      const status = exitCode === 0 ? '✓' : `✗ Exit code ${exitCode}`
+      lines.push(`\n${status}${time ? ` | ${time}` : ''}${mem ? ` | ${mem}` : ''}`)
+
+      setOutput(lines.join('\n'))
+    } catch {
+      setOutput('Error: Could not reach execution service.')
+    } finally {
+      setRunning(false)
+    }
   }
 
   function selectLang(l: string) {
@@ -214,6 +242,11 @@ export default function PlaygroundPage() {
             <Copy className="w-3.5 h-3.5" /> Copy
           </button>
 
+          <button onClick={() => setShowStdin(!showStdin)}
+            className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg hover:bg-slate-800 ${showStdin ? 'text-yellow-400' : 'text-slate-400 hover:text-white'}`}>
+            <Terminal className="w-3.5 h-3.5" /> Stdin
+          </button>
+
           <div className="ml-auto text-xs text-slate-500 hidden sm:block">
             Press <kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-slate-300 font-mono">Ctrl+Enter</kbd> to run
           </div>
@@ -234,6 +267,17 @@ export default function PlaygroundPage() {
               spellCheck={false}
               style={{ tabSize: 4 }}
             />
+            {showStdin && (
+              <div className="border-t border-slate-800">
+                <div className="px-4 py-1.5 bg-slate-900 text-xs text-yellow-400 font-semibold">Stdin (input)</div>
+                <textarea
+                  value={stdin}
+                  onChange={e => setStdin(e.target.value)}
+                  placeholder="Provide stdin input for your program..."
+                  className="w-full h-24 bg-slate-900 text-slate-300 font-mono text-sm p-3 resize-none focus:outline-none"
+                />
+              </div>
+            )}
           </div>
 
           {/* Output panel */}

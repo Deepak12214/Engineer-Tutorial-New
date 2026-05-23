@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
-import { AuthProvider } from '@/lib/auth'
+import { SessionProvider } from 'next-auth/react'
+import { Toaster } from 'react-hot-toast'
 
 export const metadata: Metadata = {
   title: 'EngineerTutorial — Learn System Design, Kafka & More',
@@ -23,9 +24,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         }} />
       </head>
       <body className="bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 min-h-screen">
-        <AuthProvider>
+        <SessionProvider>
           {children}
-        </AuthProvider>
+          <Toaster position="top-right" toastOptions={{
+            style: { borderRadius: '12px', background: '#1e293b', color: '#f1f5f9', fontSize: '14px' },
+            success: { iconTheme: { primary: '#22c55e', secondary: '#fff' } },
+            error: { iconTheme: { primary: '#ef4444', secondary: '#fff' } },
+          }} />
+        </SessionProvider>
       </body>
     </html>
   )

@@ -2,11 +2,11 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useAuth } from '@/lib/auth'
+import { useSession, signOut } from 'next-auth/react'
 import { useEffect } from 'react'
 import {
-  LayoutDashboard, FileText, Users, Settings, Globe, Navigation,
-  Code2, LogOut, ChevronRight, BarChart2, Bell, Search
+  LayoutDashboard, FileText, Users, Globe, Navigation,
+  Code2, LogOut, ChevronRight, Bell, Search
 } from 'lucide-react'
 
 const navItems = [
@@ -19,22 +19,22 @@ const navItems = [
 
 export default function AdminLayout({ children, title }: { children: React.ReactNode; title: string }) {
   const pathname = usePathname()
-  const { user, isLoaded, logout, isAdmin } = useAuth()
+  const { data: session, status } = useSession()
   const router = useRouter()
 
   useEffect(() => {
-    if (!isLoaded) return
-    if (!user) { router.push('/login'); return }
-    if (!isAdmin) router.push('/')
-  }, [user, isLoaded, isAdmin, router])
+    if (status === 'loading') return
+    if (!session) { router.push('/login'); return }
+    if (session.user.role !== 'admin' && session.user.role !== 'author') router.push('/')
+  }, [session, status, router])
 
-  if (!isLoaded) return (
+  if (status === 'loading') return (
     <div className="flex h-screen items-center justify-center bg-slate-100 dark:bg-slate-950">
       <div className="w-8 h-8 border-4 border-accent border-t-transparent rounded-full animate-spin" />
     </div>
   )
 
-  if (!user || !isAdmin) return null
+  if (!session || (session.user.role !== 'admin' && session.user.role !== 'author')) return null
 
   return (
     <div className="flex h-screen bg-slate-100 dark:bg-slate-950 overflow-hidden">
@@ -56,10 +56,7 @@ export default function AdminLayout({ children, title }: { children: React.React
             return (
               <Link key={href} href={href}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
-                  ${active
-                    ? 'bg-accent text-white'
-                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-                  }`}
+                  ${active ? 'bg-accent text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
               >
                 <Icon className="w-4 h-4 flex-shrink-0" />
                 {label}
@@ -72,14 +69,14 @@ export default function AdminLayout({ children, title }: { children: React.React
         <div className="p-3 border-t border-slate-800">
           <div className="flex items-center gap-2 px-3 py-2 mb-2">
             <div className="w-8 h-8 rounded-full bg-accent flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
-              {user.name[0].toUpperCase()}
+              {session.user.name?.[0]?.toUpperCase() ?? 'A'}
             </div>
             <div className="min-w-0">
-              <p className="text-sm font-medium text-white truncate">{user.name}</p>
-              <p className="text-xs text-slate-500 truncate">{user.role}</p>
+              <p className="text-sm font-medium text-white truncate">{session.user.name}</p>
+              <p className="text-xs text-slate-500 truncate">{session.user.role}</p>
             </div>
           </div>
-          <button onClick={logout}
+          <button onClick={() => signOut({ callbackUrl: '/' })}
             className="flex items-center gap-2 w-full px-3 py-2 text-sm text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded-lg transition-colors">
             <LogOut className="w-4 h-4" /> Logout
           </button>
@@ -88,7 +85,6 @@ export default function AdminLayout({ children, title }: { children: React.React
 
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Top bar */}
         <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-6 py-3 flex items-center justify-between flex-shrink-0">
           <h1 className="text-lg font-semibold text-slate-900 dark:text-white">{title}</h1>
           <div className="flex items-center gap-3">
@@ -104,7 +100,6 @@ export default function AdminLayout({ children, title }: { children: React.React
           </div>
         </header>
 
-        {/* Page content */}
         <main className="flex-1 overflow-y-auto p-6">
           {children}
         </main>

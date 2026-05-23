@@ -23,6 +23,7 @@ export default function AdminNavigationPage() {
   const [cta, setCta] = useState({ label: 'Get Started', href: '/register' })
   const [footerBrand, setFooterBrand] = useState('Learn system design, Kafka, LLD, and more — built by engineers from top companies.')
   const [saved, setSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   function updateLink(id: string, field: string, val: any) {
     setHeaderLinks(prev => prev.map(l => l.id === id ? { ...l, [field]: val } : l))
@@ -37,9 +38,24 @@ export default function AdminNavigationPage() {
   }
 
   async function save() {
-    await new Promise(r => setTimeout(r, 400))
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+    setSaving(true)
+    try {
+      await Promise.all([
+        fetch('/api/admin/site-config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: 'announcement_bar', value: announcement }),
+        }),
+        fetch('/api/admin/site-config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: 'header_nav', value: { links: headerLinks, cta, footerBrand } }),
+        }),
+      ])
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch {}
+    setSaving(false)
   }
 
   return (
@@ -176,9 +192,9 @@ export default function AdminNavigationPage() {
         {/* Save */}
         <div className="flex items-center justify-end gap-3">
           {saved && <span className="text-sm text-green-600 dark:text-green-400 font-medium">✓ Changes saved!</span>}
-          <button onClick={save}
-            className="flex items-center gap-2 px-6 py-2.5 bg-accent text-white font-semibold rounded-xl hover:bg-blue-700 text-sm">
-            <Save className="w-4 h-4" /> Save Navigation
+          <button onClick={save} disabled={saving}
+            className="flex items-center gap-2 px-6 py-2.5 bg-accent text-white font-semibold rounded-xl hover:bg-blue-700 text-sm disabled:opacity-50">
+            <Save className="w-4 h-4" /> {saving ? 'Saving...' : 'Save Navigation'}
           </button>
         </div>
       </div>

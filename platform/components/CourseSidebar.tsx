@@ -2,9 +2,32 @@
 
 import Link from 'next/link'
 import { CheckCircle2, Lock, ChevronDown, ChevronRight, BookOpen } from 'lucide-react'
-import { courses } from '@/lib/mockData'
-import { useAuth } from '@/lib/auth'
-import { useState } from 'react'
+import { useSession } from 'next-auth/react'
+import { useState, useEffect } from 'react'
+
+interface Topic {
+  _id: string
+  title: string
+  slug: string
+  isPremium: boolean
+  estimatedReadTime?: number
+  sectionId: string
+}
+
+interface Section {
+  _id: string
+  title: string
+  topics: Topic[]
+}
+
+interface Course {
+  _id: string
+  title: string
+  icon: string
+  totalTopics: number
+  estimatedHours: number
+  sections: Section[]
+}
 
 interface Props {
   courseId: string
@@ -12,17 +35,52 @@ interface Props {
 }
 
 export default function CourseSidebar({ courseId, currentTopicId }: Props) {
-  const { isPremium } = useAuth()
-  const course = courses.find(c => c.id === courseId)
-  const [openSections, setOpenSections] = useState<string[]>(course?.sections.map(s => s.id) || [])
+  const { data: session } = useSession()
+  const isPremium = (session?.user as any)?.subscriptionStatus === 'pro'
+  const [course, setCourse] = useState<Course | null>(null)
+  const [openSections, setOpenSections] = useState<string[]>([])
+  const [completedTopics, setCompletedTopics] = useState<Set<string>>(new Set())
 
-  if (!course) return null
+  useEffect(() => {
+    fetch(`/api/courses/${courseId}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data._id) {
+          setCourse(data)
+          setOpenSections(data.sections.map((s: Section) => s._id))
+        }
+      })
+      .catch(() => {})
+  }, [courseId])
 
-  const completedTopics = new Set(['intro', 'scalability'])
+  useEffect(() => {
+    if (!session?.user || !course?._id) return
+    fetch(`/api/progress?courseId=${course._id}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.completedTopics) {
+          setCompletedTopics(new Set(data.completedTopics.map((id: any) => id.toString())))
+        }
+      })
+      .catch(() => {})
+  }, [session, course?._id])
+
+  if (!course) {
+    return (
+      <aside className="w-72 flex-shrink-0 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col h-full">
+        <div className="p-4 animate-pulse">
+          <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-24 mb-4" />
+          <div className="h-5 bg-slate-200 dark:bg-slate-700 rounded mb-2" />
+          <div className="h-2 bg-slate-200 dark:bg-slate-700 rounded" />
+        </div>
+      </aside>
+    )
+  }
 
   const totalTopics = course.sections.reduce((acc, s) => acc + s.topics.length, 0)
-  const completed = completedTopics.size
-  const pct = Math.round((completed / totalTopics) * 100)
+  const completedCount = course.sections.reduce((acc, s) =>
+    acc + s.topics.filter(t => completedTopics.has(t._id.toString())).length, 0)
+  const pct = totalTopics > 0 ? Math.round((completedCount / totalTopics) * 100) : 0
 
   function toggleSection(id: string) {
     setOpenSections(prev => prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id])
@@ -37,10 +95,9 @@ export default function CourseSidebar({ courseId, currentTopicId }: Props) {
           <span className="text-2xl">{course.icon}</span>
           <h2 className="font-bold text-sm text-slate-900 dark:text-white leading-tight">{course.title}</h2>
         </div>
-        {/* Progress bar */}
         <div className="space-y-1">
           <div className="flex justify-between text-xs text-slate-500">
-            <span>{completed}/{totalTopics} topics</span>
+            <span>{completedCount}/{totalTopics} topics</span>
             <span className="font-medium text-accent">{pct}%</span>
           </div>
           <div className="h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
@@ -52,11 +109,11 @@ export default function CourseSidebar({ courseId, currentTopicId }: Props) {
       {/* Topic list */}
       <nav className="flex-1 p-2">
         {course.sections.map(section => {
-          const isOpen = openSections.includes(section.id)
+          const isOpen = openSections.includes(section._id)
           return (
-            <div key={section.id} className="mb-1">
+            <div key={section._id} className="mb-1">
               <button
-                onClick={() => toggleSection(section.id)}
+                onClick={() => toggleSection(section._id)}
                 className="flex items-center justify-between w-full px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
               >
                 <span>{section.title}</span>
@@ -66,14 +123,14 @@ export default function CourseSidebar({ courseId, currentTopicId }: Props) {
               {isOpen && (
                 <div className="space-y-0.5">
                   {section.topics.map(topic => {
-                    const isActive = topic.id === currentTopicId
-                    const isDone = completedTopics.has(topic.id)
+                    const isActive = topic.slug === currentTopicId || topic._id === currentTopicId
+                    const isDone = completedTopics.has(topic._id.toString())
                     const isLocked = topic.isPremium && !isPremium
 
                     return (
                       <Link
-                        key={topic.id}
-                        href={isLocked ? '/pricing' : `/learn/${courseId}/${section.id}/${topic.id}`}
+                        key={topic._id}
+                        href={isLocked ? '/pricing' : `/learn/${courseId}/${section._id}/${topic.slug}`}
                         className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors
                           ${isActive
                             ? 'bg-accent/10 text-accent font-semibold border-l-2 border-accent ml-0'
@@ -104,7 +161,7 @@ export default function CourseSidebar({ courseId, currentTopicId }: Props) {
         })}
       </nav>
 
-      {/* Bottom CTA */}
+      {/* Bottom info */}
       <div className="p-4 border-t border-slate-200 dark:border-slate-800">
         <div className="flex items-center gap-2 text-xs text-slate-500">
           <BookOpen className="w-3.5 h-3.5" />

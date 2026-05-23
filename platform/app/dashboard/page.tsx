@@ -2,29 +2,32 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { useSession } from 'next-auth/react'
 import Link from 'next/link'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
-import { useAuth } from '@/lib/auth'
 import { courses } from '@/lib/mockData'
 import { BookOpen, Zap, Flame, CheckCircle2, ArrowRight, Lock, Clock, Star } from 'lucide-react'
 
 export default function DashboardPage() {
-  const { user, isLoaded, isPremium } = useAuth()
+  const { data: session, status } = useSession()
   const router = useRouter()
 
   useEffect(() => {
-    if (!isLoaded) return
-    if (!user) router.push('/login')
-  }, [user, isLoaded, router])
+    if (status === 'loading') return
+    if (!session) router.push('/login')
+  }, [session, status, router])
 
-  if (!isLoaded) return (
+  if (status === 'loading') return (
     <div className="flex h-screen items-center justify-center">
       <div className="w-8 h-8 border-4 border-accent border-t-transparent rounded-full animate-spin" />
     </div>
   )
 
-  if (!user) return null
+  if (!session) return null
+
+  const isPremium = session.user.subscriptionStatus === 'pro'
+  const userName = session.user.name ?? 'there'
 
   const inProgress = [
     { ...courses[0], completed: 2, total: courses[0].sections.reduce((a, s) => a + s.topics.length, 0) },
@@ -40,7 +43,7 @@ export default function DashboardPage() {
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
           <div>
             <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-              Welcome back, {user.name.split(' ')[0]} 👋
+              Welcome back, {userName.split(' ')[0]} 👋
             </h1>
             <p className="text-slate-500 text-sm mt-1">Keep learning — you're doing great!</p>
           </div>
@@ -70,7 +73,6 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid lg:grid-cols-3 gap-6">
-          {/* In Progress */}
           <div className="lg:col-span-2">
             <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Continue Learning</h2>
             <div className="space-y-4">
@@ -103,7 +105,6 @@ export default function DashboardPage() {
               })}
             </div>
 
-            {/* Explore more */}
             <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-4 mt-8">Explore More Courses</h2>
             <div className="grid sm:grid-cols-2 gap-4">
               {courses.slice(2).map(course => (
@@ -122,15 +123,14 @@ export default function DashboardPage() {
 
           {/* Right panel */}
           <div className="space-y-5">
-            {/* User card */}
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5">
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-12 h-12 rounded-full bg-accent flex items-center justify-center text-white text-xl font-bold">
-                  {user.name[0]}
+                  {userName[0]}
                 </div>
                 <div>
-                  <p className="font-semibold text-slate-900 dark:text-white">{user.name}</p>
-                  <p className="text-xs text-slate-500">{user.email}</p>
+                  <p className="font-semibold text-slate-900 dark:text-white">{userName}</p>
+                  <p className="text-xs text-slate-500">{session.user.email}</p>
                 </div>
               </div>
               <div className="flex items-center justify-between text-sm">
@@ -146,7 +146,6 @@ export default function DashboardPage() {
               )}
             </div>
 
-            {/* Recent blogs */}
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5">
               <h3 className="font-semibold text-slate-900 dark:text-white mb-3 text-sm">Recent Blogs</h3>
               <div className="space-y-3">
@@ -154,8 +153,7 @@ export default function DashboardPage() {
                   { title: 'Caching Is Not Just About Speed', time: '8 min', slug: 'caching-strategy' },
                   { title: 'Why Netflix Never Crashes', time: '12 min', slug: 'why-netflix-never-crashes' },
                 ].map(b => (
-                  <Link key={b.slug} href={`/blogs/${b.slug}`}
-                    className="flex items-start gap-3 group">
+                  <Link key={b.slug} href={`/blogs/${b.slug}`} className="flex items-start gap-3 group">
                     <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center flex-shrink-0">
                       <BookOpen className="w-3.5 h-3.5 text-accent" />
                     </div>

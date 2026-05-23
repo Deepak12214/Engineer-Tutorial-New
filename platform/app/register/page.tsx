@@ -2,11 +2,12 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { useAuth } from '@/lib/auth'
+import { useRouter } from 'next/navigation'
 import { Code2, User, Mail, Eye, EyeOff, CheckCircle2 } from 'lucide-react'
+import toast from 'react-hot-toast'
 
 export default function RegisterPage() {
-  const { login } = useAuth()
+  const router = useRouter()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -19,9 +20,24 @@ export default function RegisterPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (!name.trim()) return toast.error('Name is required')
+    if (password.length < 6) return toast.error('Password must be at least 6 characters')
     setLoading(true)
-    await new Promise(r => setTimeout(r, 700))
-    login(email || 'user@example.com', password, name)
+    try {
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim(), email, password }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      toast.success('OTP sent to your email!')
+      router.push(`/verify-otp?email=${encodeURIComponent(email)}`)
+    } catch (err: any) {
+      toast.error(err.message || 'Registration failed')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -71,7 +87,7 @@ export default function RegisterPage() {
                 <div className="relative">
                   <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <input type="text" value={name} onChange={e => setName(e.target.value)}
-                    placeholder="Rahul Sharma"
+                    placeholder="Rahul Sharma" required
                     className="w-full pl-10 pr-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-accent placeholder-slate-400"
                   />
                 </div>
@@ -82,7 +98,7 @@ export default function RegisterPage() {
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-                    placeholder="you@example.com"
+                    placeholder="you@example.com" required
                     className="w-full pl-10 pr-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-accent placeholder-slate-400"
                   />
                 </div>
@@ -92,7 +108,7 @@ export default function RegisterPage() {
                 <label className="text-sm font-medium text-slate-700 dark:text-slate-300 block mb-1.5">Password</label>
                 <div className="relative">
                   <input type={showPw ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)}
-                    placeholder="Create a password"
+                    placeholder="Min 6 characters" required
                     className="w-full pl-4 pr-10 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-accent placeholder-slate-400"
                   />
                   <button type="button" onClick={() => setShowPw(!showPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
@@ -102,7 +118,7 @@ export default function RegisterPage() {
                 {password && (
                   <div className="mt-2 space-y-1">
                     <div className="flex gap-1">
-                      {[1,2,3].map(i => (
+                      {[1, 2, 3].map(i => (
                         <div key={i} className={`h-1 flex-1 rounded-full ${i <= strength ? strengthColor[strength] : 'bg-slate-200 dark:bg-slate-700'}`} />
                       ))}
                     </div>
@@ -116,7 +132,7 @@ export default function RegisterPage() {
               <button type="submit" disabled={loading}
                 className="w-full py-2.5 bg-accent text-white font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-60 flex items-center justify-center gap-2 text-sm mt-2">
                 {loading ? (
-                  <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Creating account...</>
+                  <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Sending OTP...</>
                 ) : 'Create Account — Free'}
               </button>
 

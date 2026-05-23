@@ -1,280 +1,233 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import AdminLayout from '@/components/AdminLayout'
-import { Plus, Trash2, GripVertical, Eye, Save, Globe, FileText, Code, List, Table, Image, Lightbulb, Video, HelpCircle, ChevronDown, AlignLeft, Heading1, Heading2 } from 'lucide-react'
+import BlockEditor from '@/components/BlockEditor'
+import ContentRenderer from '@/components/ContentRenderer'
+import { Save, Globe, Eye, EyeOff, Zap, Lock } from 'lucide-react'
+import toast from 'react-hot-toast'
 
-type BlockType = 'heading' | 'smallHeading' | 'text' | 'list' | 'code' | 'table' | 'image' | 'callout' | 'video' | 'quiz'
-
-interface Block {
-  id: string
-  type: BlockType
-  content: string
-}
-
-const blockTypes: { type: BlockType; icon: any; label: string; desc: string }[] = [
-  { type: 'heading', icon: Heading1, label: 'Heading', desc: 'Large section title' },
-  { type: 'smallHeading', icon: Heading2, label: 'Subheading', desc: 'H2 subheading' },
-  { type: 'text', icon: AlignLeft, label: 'Text', desc: 'Paragraph text' },
-  { type: 'list', icon: List, label: 'List', desc: 'Bullet points' },
-  { type: 'code', icon: Code, label: 'Code', desc: 'Code snippet' },
-  { type: 'table', icon: Table, label: 'Table', desc: 'Data table' },
-  { type: 'image', icon: Image, label: 'Image', desc: 'Image block' },
-  { type: 'callout', icon: Lightbulb, label: 'Callout', desc: 'Tip / warning box' },
-  { type: 'video', icon: Video, label: 'Video', desc: 'YouTube or hosted video' },
-  { type: 'quiz', icon: HelpCircle, label: 'Quiz', desc: 'Multiple choice question' },
-]
+interface Block { id: string; type: string; content: any; level?: number }
 
 export default function NewContentPage() {
+  const router = useRouter()
+  const [contentType, setContentType] = useState<'topic' | 'blog'>('topic')
   const [title, setTitle] = useState('')
-  const [blocks, setBlocks] = useState<Block[]>([
-    { id: '1', type: 'heading', content: 'Introduction' },
-    { id: '2', type: 'text', content: 'Write your content here. This is the first paragraph of your topic.' },
-    { id: '3', type: 'code', content: '# Sample code\nprint("Hello, World!")' },
-  ])
-  const [preview, setPreview] = useState(false)
+  const [slug, setSlug] = useState('')
+  const [blocks, setBlocks] = useState<Block[]>([])
   const [isPremium, setIsPremium] = useState(false)
-  const [status, setStatus] = useState('draft')
-  const [course, setCourse] = useState('')
-  const [saved, setSaved] = useState(false)
+  const [previewBlockCount, setPreviewBlockCount] = useState(3)
+  const [isPublished, setIsPublished] = useState(false)
+  const [showPreview, setShowPreview] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [courses, setCourses] = useState<any[]>([])
+  const [sections, setSections] = useState<any[]>([])
+  const [courseId, setCourseId] = useState('')
+  const [sectionId, setSectionId] = useState('')
+  const autoSaveRef = useRef<NodeJS.Timeout>()
 
-  function addBlock(type: BlockType) {
-    const defaults: Record<BlockType, string> = {
-      heading: 'New Section',
-      smallHeading: 'Subsection',
-      text: 'Write your paragraph here...',
-      list: 'Item 1\nItem 2\nItem 3',
-      code: '// Your code here\nconsole.log("Hello")',
-      table: 'Column 1 | Column 2 | Column 3\n--- | --- | ---\nValue 1 | Value 2 | Value 3',
-      image: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=800',
-      callout: 'tip: This is a helpful tip for your readers.',
-      video: 'https://youtube.com/embed/your-video-id',
-      quiz: 'Question: What is a load balancer?\nA) A type of database\nB) Distributes traffic across servers\nC) A caching mechanism\nAnswer: B',
+  useEffect(() => {
+    fetch('/api/admin/courses').then(r => r.json()).then(setCourses).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (courseId) {
+      fetch(`/api/admin/sections?courseId=${courseId}`).then(r => r.json()).then(setSections).catch(() => {})
     }
-    setBlocks(prev => [...prev, { id: Date.now().toString(), type, content: defaults[type] }])
-  }
+  }, [courseId])
 
-  function updateBlock(id: string, content: string) {
-    setBlocks(prev => prev.map(b => b.id === id ? { ...b, content } : b))
-  }
+  // Auto-generate slug from title
+  useEffect(() => {
+    setSlug(title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''))
+  }, [title])
 
-  function deleteBlock(id: string) {
-    setBlocks(prev => prev.filter(b => b.id !== id))
-  }
+  // Auto-save draft every 30s
+  useEffect(() => {
+    if (autoSaveRef.current) clearTimeout(autoSaveRef.current)
+    if (title || blocks.length > 0) {
+      autoSaveRef.current = setTimeout(() => {
+        localStorage.setItem('et_draft_new', JSON.stringify({ contentType, title, slug, blocks, isPremium, courseId, sectionId }))
+        toast.success('Draft auto-saved', { duration: 1500, id: 'autosave' })
+      }, 30000)
+    }
+    return () => { if (autoSaveRef.current) clearTimeout(autoSaveRef.current) }
+  }, [title, blocks, contentType, isPremium, courseId, sectionId, slug])
 
-  function moveBlock(id: string, dir: 'up' | 'down') {
-    const idx = blocks.findIndex(b => b.id === id)
-    if (dir === 'up' && idx === 0) return
-    if (dir === 'down' && idx === blocks.length - 1) return
-    const newBlocks = [...blocks]
-    const newIdx = dir === 'up' ? idx - 1 : idx + 1;
-    [newBlocks[idx], newBlocks[newIdx]] = [newBlocks[newIdx], newBlocks[idx]]
-    setBlocks(newBlocks)
-  }
+  async function save(publish = false) {
+    if (!title.trim()) return toast.error('Title is required')
+    if (contentType === 'topic' && !sectionId) return toast.error('Select a section')
+    setSaving(true)
+    try {
+      const endpoint = contentType === 'topic' ? '/api/admin/topics' : '/api/admin/blogs'
+      const payload = contentType === 'topic'
+        ? { title, slug, blocks, isPremium, previewBlockCount, isPublished: publish, courseId, sectionId, estimatedReadTime: Math.max(1, Math.ceil(blocks.length * 1.5)) }
+        : { title, slug, blocks, isPublished: publish, category: 'general' }
 
-  async function handleSave(publishNow: boolean) {
-    setSaved(false)
-    await new Promise(r => setTimeout(r, 500))
-    if (publishNow) setStatus('published')
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
-  }
+      const res = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
 
-  const blockIcon: Record<BlockType, string> = {
-    heading: '# ', smallHeading: '## ', text: '¶ ', list: '• ', code: '</>', table: '⊞ ', image: '🖼 ', callout: '💡 ', video: '▶ ', quiz: '❓ ',
+      localStorage.removeItem('et_draft_new')
+      toast.success(publish ? 'Published!' : 'Saved as draft')
+      router.push('/admin/content')
+    } catch (err: any) {
+      toast.error(err.message || 'Save failed')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
-    <AdminLayout title="Block Editor — New Content">
-      <div className="flex gap-6 h-[calc(100vh-130px)]">
-        {/* Left: Block palette */}
-        <div className="w-52 flex-shrink-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 overflow-y-auto">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-3">Add Block</p>
-          <div className="space-y-1">
-            {blockTypes.map(({ type, icon: Icon, label, desc }) => (
-              <button key={type} onClick={() => addBlock(type)}
-                className="w-full flex items-center gap-3 p-2.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-left group">
-                <div className="w-8 h-8 bg-slate-100 dark:bg-slate-700 rounded-lg flex items-center justify-center flex-shrink-0 group-hover:bg-accent/10">
-                  <Icon className="w-4 h-4 text-slate-500 group-hover:text-accent" />
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-slate-700 dark:text-slate-300 group-hover:text-accent">{label}</p>
-                  <p className="text-[10px] text-slate-400">{desc}</p>
-                </div>
+    <AdminLayout title="New Content">
+      <div className="max-w-5xl mx-auto">
+        <div className="flex flex-wrap items-center gap-3 mb-6">
+          {/* Content type toggle */}
+          <div className="flex bg-slate-100 dark:bg-slate-800 rounded-xl p-1 gap-1">
+            {(['topic', 'blog'] as const).map(t => (
+              <button key={t} onClick={() => setContentType(t)}
+                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${contentType === t ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>
+                {t === 'topic' ? '📄 Topic' : '📝 Blog'}
               </button>
             ))}
           </div>
+
+          <div className="flex items-center gap-2 ml-auto">
+            <button onClick={() => setShowPreview(!showPreview)}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl text-slate-600 dark:text-slate-400 hover:border-accent">
+              {showPreview ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              {showPreview ? 'Edit' : 'Preview'}
+            </button>
+            <button onClick={() => save(false)} disabled={saving}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl text-slate-600 dark:text-slate-400 hover:border-accent disabled:opacity-50">
+              <Save className="w-4 h-4" /> Save Draft
+            </button>
+            <button onClick={() => save(true)} disabled={saving}
+              className="flex items-center gap-2 px-4 py-1.5 text-sm bg-accent text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 font-semibold">
+              <Globe className="w-4 h-4" /> {saving ? 'Publishing...' : 'Publish'}
+            </button>
+          </div>
         </div>
 
-        {/* Center: Editor / Preview */}
-        <div className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl">
-          {/* Toolbar */}
-          <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-200 dark:border-slate-800">
-            <button onClick={() => setPreview(!preview)}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${preview ? 'bg-accent/10 text-accent' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>
-              <Eye className="w-3.5 h-3.5" /> {preview ? 'Edit' : 'Preview'}
-            </button>
-            <span className="text-slate-200 dark:text-slate-700">|</span>
-            <span className="text-xs text-slate-400">{blocks.length} blocks</span>
-            {saved && <span className="text-xs text-green-600 dark:text-green-400 font-medium">✓ Saved!</span>}
-          </div>
-
-          {/* Content area */}
-          <div className="flex-1 overflow-y-auto p-5">
-            {/* Title */}
+        <div className="grid lg:grid-cols-3 gap-6">
+          {/* Main editor */}
+          <div className="lg:col-span-2">
             <input value={title} onChange={e => setTitle(e.target.value)}
-              placeholder="Topic title..."
-              className="w-full text-2xl font-bold text-slate-900 dark:text-white bg-transparent border-0 border-b-2 border-slate-200 dark:border-slate-700 focus:border-accent focus:outline-none pb-3 mb-6 placeholder-slate-300"
+              placeholder="Content title..."
+              className="w-full text-2xl font-bold bg-transparent border-none outline-none text-slate-900 dark:text-white placeholder-slate-300 mb-2"
+            />
+            <input value={slug} onChange={e => setSlug(e.target.value)}
+              placeholder="slug-auto-generated"
+              className="w-full text-sm text-slate-400 bg-transparent border-none outline-none mb-6 font-mono"
             />
 
-            {!preview ? (
-              <div className="space-y-2">
-                {blocks.map((block) => (
-                  <div key={block.id}
-                    className="group relative border border-slate-200 dark:border-slate-700 rounded-xl hover:border-accent/50 transition-colors">
-                    {/* Block header */}
-                    <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 rounded-t-xl">
-                      <GripVertical className="w-4 h-4 text-slate-400 cursor-grab" />
-                      <span className="text-xs font-mono text-slate-500">{blockIcon[block.type]}{block.type}</span>
-                      <div className="ml-auto flex gap-1">
-                        <button onClick={() => moveBlock(block.id, 'up')} className="p-1 text-slate-400 hover:text-slate-700 text-xs">↑</button>
-                        <button onClick={() => moveBlock(block.id, 'down')} className="p-1 text-slate-400 hover:text-slate-700 text-xs">↓</button>
-                        <button onClick={() => deleteBlock(block.id)} className="p-1 text-slate-400 hover:text-red-500">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                    {/* Block editor */}
-                    <div className="p-3">
-                      {block.type === 'code' ? (
-                        <textarea value={block.content} onChange={e => updateBlock(block.id, e.target.value)}
-                          className="w-full font-mono text-sm bg-slate-900 text-green-300 rounded-lg p-3 border-0 focus:outline-none resize-none min-h-[80px]"
-                          rows={Math.max(3, block.content.split('\n').length + 1)}
-                        />
-                      ) : block.type === 'heading' ? (
-                        <input value={block.content} onChange={e => updateBlock(block.id, e.target.value)}
-                          className="w-full text-xl font-bold bg-transparent focus:outline-none text-slate-900 dark:text-white"
-                        />
-                      ) : block.type === 'smallHeading' ? (
-                        <input value={block.content} onChange={e => updateBlock(block.id, e.target.value)}
-                          className="w-full text-lg font-semibold bg-transparent focus:outline-none text-slate-900 dark:text-white"
-                        />
-                      ) : (
-                        <textarea value={block.content} onChange={e => updateBlock(block.id, e.target.value)}
-                          className="w-full text-sm bg-transparent focus:outline-none resize-none text-slate-700 dark:text-slate-300 min-h-[40px]"
-                          rows={Math.max(2, block.content.split('\n').length + 1)}
-                        />
-                      )}
-                    </div>
-                  </div>
-                ))}
+            {showPreview
+              ? <ContentRenderer blocks={blocks} />
+              : <BlockEditor blocks={blocks} onChange={setBlocks} />
+            }
+          </div>
 
-                <button onClick={() => addBlock('text')}
-                  className="w-full py-3 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-400 hover:border-accent hover:text-accent flex items-center justify-center gap-2">
-                  <Plus className="w-4 h-4" /> Add Block
-                </button>
-              </div>
-            ) : (
-              <div className="prose-content">
-                {blocks.map((block, i) => {
-                  switch(block.type) {
-                    case 'heading': return <h1 key={i} className="text-2xl font-bold text-slate-900 dark:text-white mb-4">{block.content}</h1>
-                    case 'smallHeading': return <h2 key={i} className="text-xl font-semibold text-slate-900 dark:text-white mb-3 mt-5">{block.content}</h2>
-                    case 'text': return <p key={i} className="text-slate-700 dark:text-slate-300 mb-4 leading-relaxed">{block.content}</p>
-                    case 'code': return <pre key={i} className="bg-slate-900 text-green-300 rounded-xl p-4 font-mono text-sm mb-4 overflow-x-auto">{block.content}</pre>
-                    case 'list': return <ul key={i} className="list-disc pl-5 mb-4 space-y-1">{block.content.split('\n').map((l, j) => <li key={j} className="text-slate-700 dark:text-slate-300 text-sm">{l}</li>)}</ul>
-                    case 'callout': return <div key={i} className="callout-info mb-4"><p className="text-sm">💡 {block.content.replace(/^tip:\s*/i, '')}</p></div>
-                    default: return <p key={i} className="text-slate-500 text-sm mb-4 italic">[{block.type} block]</p>
-                  }
-                })}
+          {/* Settings panel */}
+          <div className="space-y-4">
+            {contentType === 'topic' && (
+              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+                <h3 className="font-semibold text-slate-900 dark:text-white text-sm mb-3">Course & Section</h3>
+                <select value={courseId} onChange={e => { setCourseId(e.target.value); setSectionId('') }}
+                  className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 mb-2 focus:outline-none focus:ring-2 focus:ring-accent">
+                  <option value="">Select course...</option>
+                  {courses.map((c: any) => <option key={c._id} value={c._id}>{c.title}</option>)}
+                </select>
+                <select value={sectionId} onChange={e => setSectionId(e.target.value)} disabled={!courseId}
+                  className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50">
+                  <option value="">Select section...</option>
+                  {sections.map((s: any) => <option key={s._id} value={s._id}>{s.title}</option>)}
+                </select>
               </div>
             )}
-          </div>
-        </div>
 
-        {/* Right: Metadata */}
-        <div className="w-64 flex-shrink-0 space-y-4 overflow-y-auto">
-          {/* Publish card */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">Publish</h3>
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs text-slate-500">Status</span>
-              <select value={status} onChange={e => setStatus(e.target.value)}
-                className="text-xs py-1 px-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 focus:outline-none">
-                <option value="draft">Draft</option>
-                <option value="published">Published</option>
-                <option value="archived">Archived</option>
-              </select>
-            </div>
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-xs text-slate-500">Premium</span>
-              <button onClick={() => setIsPremium(!isPremium)}
-                className={`relative inline-flex w-10 h-5 rounded-full transition-colors ${isPremium ? 'bg-accent' : 'bg-slate-200 dark:bg-slate-700'}`}>
-                <span className={`absolute w-4 h-4 bg-white rounded-full top-0.5 transition-all ${isPremium ? 'left-5.5 translate-x-0.5' : 'left-0.5'}`} />
-              </button>
-            </div>
-            <div className="space-y-2">
-              <button onClick={() => handleSave(false)}
-                className="w-full py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center justify-center gap-2">
-                <Save className="w-3.5 h-3.5" /> Save Draft
-              </button>
-              <button onClick={() => handleSave(true)}
-                className="w-full py-2 bg-accent text-white rounded-xl text-sm font-semibold hover:bg-blue-700 flex items-center justify-center gap-2">
-                <Globe className="w-3.5 h-3.5" /> Publish
-              </button>
-            </div>
-          </div>
+            {contentType === 'topic' && (
+              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+                <h3 className="font-semibold text-slate-900 dark:text-white text-sm mb-3">Access</h3>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <div onClick={() => setIsPremium(!isPremium)}
+                    className={`relative w-10 h-5 rounded-full transition-colors ${isPremium ? 'bg-amber-500' : 'bg-slate-200 dark:bg-slate-700'}`}>
+                    <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${isPremium ? 'translate-x-5' : ''}`} />
+                  </div>
+                  <span className="text-sm text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                    {isPremium ? <><Zap className="w-3.5 h-3.5 text-amber-500" /> Pro Content</> : <><Lock className="w-3.5 h-3.5 text-slate-400" /> Free Content</>}
+                  </span>
+                </label>
+                {isPremium && (
+                  <div className="mt-3">
+                    <label className="text-xs text-slate-500 block mb-1">Preview blocks (for free users)</label>
+                    <input type="number" min={1} max={10} value={previewBlockCount}
+                      onChange={e => setPreviewBlockCount(parseInt(e.target.value) || 3)}
+                      className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-accent"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
 
-          {/* Assignment */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">Assignment</h3>
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs text-slate-500 block mb-1">Course</label>
-                <select value={course} onChange={e => setCourse(e.target.value)}
-                  className="w-full text-sm py-2 px-3 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-accent">
-                  <option value="">Select course...</option>
-                  <option>System Design</option>
-                  <option>Apache Kafka</option>
-                  <option>Low Level Design</option>
-                  <option>AWS</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-slate-500 block mb-1">Section</label>
-                <select className="w-full text-sm py-2 px-3 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-accent">
-                  <option>Fundamentals</option>
-                  <option>Advanced Patterns</option>
-                  <option>Case Studies</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-slate-500 block mb-1">Tags</label>
-                <input placeholder="e.g. caching, redis, scaling" className="w-full text-sm py-2 px-3 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-accent placeholder-slate-400" />
-              </div>
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+              <h3 className="font-semibold text-slate-900 dark:text-white text-sm mb-3">Image Upload</h3>
+              <ImageUploader onInsert={(url) => {
+                const imgBlock: Block = { id: `block-${Date.now()}`, type: 'image', content: { url, alt: '', caption: '' } }
+                setBlocks(prev => [...prev, imgBlock])
+                toast.success('Image added to blocks')
+              }} />
             </div>
-          </div>
 
-          {/* SEO */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">SEO</h3>
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs text-slate-500 block mb-1">Meta Title</label>
-                <input placeholder="SEO title..." className="w-full text-sm py-2 px-3 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-accent placeholder-slate-400" />
-              </div>
-              <div>
-                <label className="text-xs text-slate-500 block mb-1">Meta Description</label>
-                <textarea rows={3} placeholder="SEO description..." className="w-full text-sm py-2 px-3 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-accent resize-none placeholder-slate-400" />
-              </div>
-              <div>
-                <label className="text-xs text-slate-500 block mb-1">OG Image URL</label>
-                <input placeholder="https://..." className="w-full text-sm py-2 px-3 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-accent placeholder-slate-400" />
-              </div>
+            <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 text-xs text-slate-500 space-y-1">
+              <p>📦 {blocks.length} blocks</p>
+              <p>⏱ ~{Math.max(1, Math.ceil(blocks.length * 1.5))} min read</p>
+              <p>💾 Auto-saves every 30s</p>
             </div>
           </div>
         </div>
       </div>
     </AdminLayout>
+  )
+}
+
+function ImageUploader({ onInsert }: { onInsert: (url: string) => void }) {
+  const [uploading, setUploading] = useState(false)
+  const [destination, setDestination] = useState<'local' | 'cloudinary'>('local')
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      form.append('destination', destination)
+      const res = await fetch('/api/upload', { method: 'POST', body: form })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      onInsert(data.url)
+    } catch (err: any) {
+      toast.error(err.message || 'Upload failed')
+    } finally {
+      setUploading(false)
+      e.target.value = ''
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-2 text-xs">
+        {(['local', 'cloudinary'] as const).map(d => (
+          <button key={d} onClick={() => setDestination(d)}
+            className={`px-2 py-1 rounded-lg border transition-colors ${destination === d ? 'border-accent bg-accent/10 text-accent' : 'border-slate-200 dark:border-slate-700 text-slate-500'}`}>
+            {d === 'local' ? '📁 Local' : '☁️ Cloudinary'}
+          </button>
+        ))}
+      </div>
+      <label className={`flex items-center justify-center gap-2 w-full py-2 border-2 border-dashed rounded-lg text-xs cursor-pointer transition-colors ${uploading ? 'border-accent text-accent' : 'border-slate-200 dark:border-slate-700 text-slate-400 hover:border-accent hover:text-accent'}`}>
+        <input type="file" accept="image/*" onChange={handleFile} className="hidden" disabled={uploading} />
+        {uploading ? 'Uploading...' : '+ Upload image'}
+      </label>
+    </div>
   )
 }
