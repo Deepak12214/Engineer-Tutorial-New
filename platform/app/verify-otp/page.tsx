@@ -1,13 +1,12 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { Suspense, useState, useRef, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { signIn } from 'next-auth/react'
 import Link from 'next/link'
 import { Code2, Mail } from 'lucide-react'
 import toast from 'react-hot-toast'
 
-export default function VerifyOTPPage() {
+function VerifyOTPContent() {
   const router = useRouter()
   const params = useSearchParams()
   const email = params.get('email') || ''
@@ -51,7 +50,6 @@ export default function VerifyOTPPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
       toast.success('Email verified!')
-      // Auto sign-in after verification — redirect to login to enter password
       router.push('/login')
     } catch (err: any) {
       toast.error(err.message || 'Verification failed')
@@ -63,7 +61,7 @@ export default function VerifyOTPPage() {
   async function handleResend() {
     setResending(true)
     try {
-      const res = await fetch('/api/auth/register', {
+      await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, resend: true }),
@@ -112,7 +110,9 @@ export default function VerifyOTPPage() {
 
           <button onClick={handleVerify} disabled={loading || otp.join('').length !== 6}
             className="w-full py-2.5 bg-accent text-white font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-60 flex items-center justify-center gap-2 text-sm mb-4">
-            {loading ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Verifying...</> : 'Verify Email'}
+            {loading
+              ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Verifying...</>
+              : 'Verify Email'}
           </button>
 
           <button onClick={handleResend} disabled={resending} className="text-sm text-slate-500 hover:text-accent">
@@ -121,5 +121,17 @@ export default function VerifyOTPPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function VerifyOTPPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+      </div>
+    }>
+      <VerifyOTPContent />
+    </Suspense>
   )
 }

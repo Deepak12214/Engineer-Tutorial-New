@@ -1,6 +1,8 @@
 import NextAuth from 'next-auth'
 import { authConfig } from './auth.config'
 
-// This instance is for reading sessions in server components only.
-// The [...nextauth] route has its own NextAuth instance with full providers.
-export const { auth, signIn, signOut } = NextAuth(authConfig)
+// Explicit property access instead of destructuring — required for webpack static export analysis
+const nextAuthInstance = NextAuth(authConfig)
+export const auth = nextAuthInstance.auth
+export const signIn = nextAuthInstance.signIn
+export const signOut = nextAuthInstance.signOut
