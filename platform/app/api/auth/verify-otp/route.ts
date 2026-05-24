@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
     await user.save()
 
     // Send welcome email in background (don't await)
-    sendWelcomeEmail(user.email, user.name).catch(() => {})
+    // sendWelcomeEmail(user.email, user.name).catch(() => {})
 
     return NextResponse.json({ message: 'Email verified successfully' })
   } catch (err) {

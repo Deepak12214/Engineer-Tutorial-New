@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Header from '@/components/Header'
 import { Play, RotateCcw, Copy, ChevronDown, Terminal } from 'lucide-react'
 
-const languages = ['JavaScript', 'Python', 'Java', 'C++', 'Go', 'Rust', 'SQL', 'Bash']
+const languages = ['JavaScript', 'Python', 'Java', 'C++', 'Go', 'Rust', /* 'SQL', */ 'Bash']
 
 const starterCode: Record<string, string> = {
   JavaScript: `// Write your JavaScript code here

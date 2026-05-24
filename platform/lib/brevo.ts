@@ -1,6 +1,6 @@
 const BREVO_API_KEY = process.env.BREVO_API_KEY!
-const FROM_EMAIL = 'noreply@engineertutorial.com'
-const FROM_NAME = 'EngineerTutorial'
+const FROM_EMAIL = process.env.BREVO_SENDER_EMAIL!
+const FROM_NAME = process.env.BREVO_SENDER_NAME ?? 'EngineerTutorial'
 
 async function sendEmail(to: string, subject: string, htmlContent: string) {
   const res = await fetch('https://api.brevo.com/v3/smtp/email', {

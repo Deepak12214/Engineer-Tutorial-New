@@ -32,6 +32,9 @@ export async function POST(req: NextRequest) {
       existing.otpExpiry = new Date(Date.now() + 10 * 60 * 1000)
       await existing.save()
       await sendOTPEmail(email, name, otp)
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`\n🔑 DEV OTP for ${email}: ${otp}\n`)
+      }
       return NextResponse.json({ message: 'OTP resent', email })
     }
 
@@ -49,6 +52,9 @@ export async function POST(req: NextRequest) {
     })
 
     await sendOTPEmail(email, name, otp)
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`\n🔑 DEV OTP for ${email}: ${otp}\n`)
+    }
 
     return NextResponse.json({ message: 'OTP sent to your email', email })
   } catch (err: any) {
